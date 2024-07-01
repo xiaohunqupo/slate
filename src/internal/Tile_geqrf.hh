@@ -81,10 +81,14 @@ void geqrf(
     using blas::conj;
     using real_t = blas::real_type<scalar_t>;
 
+    // Constants
     const scalar_t zero = 0.0;
     const scalar_t one  = 1.0;
     const real_t r_one  = 1.0;
-    int knt;
+    // LAPACK eps = 0.5 epsilon from C++
+    const real_t safe_min = std::numeric_limits<real_t>::min()
+                          / (0.5 * std::numeric_limits<real_t>::epsilon());
+    const real_t rsafe_min = r_one / safe_min;
 
     Tile<scalar_t>& diag_tile = tiles.at(0);
     int64_t diag_len = std::min( diag_tile.mb(), diag_tile.nb() );
@@ -148,21 +152,19 @@ void geqrf(
             }
             thread_barrier.wait(thread_size);
 
-            real_t safemin = std::numeric_limits<real_t>::epsilon();
-            real_t rsafemin = r_one / safemin;
             // if Householder norm is numerically "zero", set to identity and exit
-            if (xnorm < safemin && j < diag_len) {
+            if (xnorm < safe_min && j < diag_len) {
                 betas.at(j) = alpha;
                 taus.at(j) = zero;
                 diag_tile.at(j,j) = betas.at(j);
             }
             else {
                 real_t beta =
-                    -std::copysign(lapack::lapy3(alphr, alphi, xnorm), alphr);
-                knt = 0;
-                if (std::abs(beta) < safemin) {
-                    if (knt < 20 && std::abs(beta) < safemin) {
-                        knt += 1;
+                    -std::copysign( std::hypot( alphr, alphi, xnorm ), alphr );
+                int cnt = 0;
+                if (std::abs( beta ) < safe_min) {
+                    do {
+                        cnt += 1;
                         // scale input vector accordingly
                         for (int64_t idx = thread_rank;
                              idx < int64_t(tiles.size());
@@ -173,18 +175,20 @@ void geqrf(
 
                             if (i_index == tile_indices.at(0)) {
                                 if (j+1 < tile.mb())
-                                    blas::scal(tile.mb()-j-1,
-                                               rsafemin, &tile.at(j+1, j), 1);
+                                    blas::scal( tile.mb()-j-1, rsafe_min,
+                                                &tile.at( j+1, j ), 1 );
                             }
                             else {
-                                blas::scal(tile.mb(), rsafemin, &tile.at(0, j), 1);
+                                blas::scal( tile.mb(), rsafe_min,
+                                            &tile.at( 0, j ), 1 );
                             }
                         }
                         thread_barrier.wait(thread_size);
 
-                        beta = beta*rsafemin;
-                        alpha = alpha*rsafemin;
-                    }
+                        beta = beta*rsafe_min;
+                        alpha = alpha*rsafe_min;
+                    } while (cnt < 20 && std::abs( beta ) < safe_min);
+
                     //-------------------
                     // thread local norm
                     // with scaled vector
@@ -217,7 +221,8 @@ void geqrf(
                     thread_barrier.wait(thread_size);
                     alphr = real(alpha);
                     alphi = imag(alpha);
-                    beta = -std::copysign(lapack::lapy3(alphr, alphi, xnorm), alphr);
+                    beta = -std::copysign( std::hypot( alphr, alphi, xnorm ),
+                                           alphr );
                 }
 
                 // todo: Use overflow-safe division (see CLADIV/ZLADIV)
@@ -228,8 +233,8 @@ void geqrf(
                 betas.at(j) = beta;
                 taus.at(j) = tau;
 
-                for (int64_t i = 0; i < knt; ++i) {
-                    beta = beta*safemin;
+                for (int64_t i = 0; i < cnt; ++i) {
+                    beta = beta*safe_min;
                 }
                 //----------------------------------
                 // column scaling and thread local W

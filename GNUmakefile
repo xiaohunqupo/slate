@@ -220,7 +220,7 @@ ifeq (${openmp},1)
         LDFLAGS  += -fopenmp
     endif
 else
-    slate_src += src/stubs/openmp_stubs.cc
+    ${error ERROR: unsupported `openmp=${openmp}`. OpenMP is required.}
 endif
 
 #-------------------------------------------------------------------------------
@@ -228,6 +228,9 @@ endif
 ifneq (,${filter mpi%,${CXX}})
     # CXX = mpicxx, mpic++, ...
     # Generic MPI via compiler wrapper. No flags to set.
+    ifneq (${mpi},)
+        ${warning `CXX=${CXX}` MPI compiler overrides `mpi=${mpi}`}
+    endif
 else ifeq (${mpi},cray)
     # Cray MPI via compiler wrapper. No flags to set.
 else ifeq (${mpi},1)
@@ -237,9 +240,9 @@ else ifeq (${mpi},spectrum)
     # IBM Spectrum MPI
     LIBS  += -lmpi_ibm
 else
-    FLAGS += -DSLATE_NO_MPI
-    slate_src += src/stubs/mpi_stubs.cc
-    fortran_api = 0
+    ${error ERROR: unknown `mpi=${mpi}`. MPI is required. \
+            Either set CXX to an MPI compiler named `mpi...`, such as `mpicxx`, \
+            or set mpi to one of 1, cray, or spectrum}
 endif
 
 #-------------------------------------------------------------------------------
@@ -1003,7 +1006,7 @@ blaspp_src = ${wildcard blaspp/include/blas/*.h \
                         blaspp/include/blas/*.hh \
                         blaspp/src/*.cc}
 
-blaspp = blaspp/lib/blaspp.${lib_ext}
+blaspp = blaspp/lib/libblaspp.${lib_ext}
 
 # dependency on testsweeper serializes compiles
 ${blaspp}: ${blaspp_src} | ${testsweeper}
@@ -1017,7 +1020,7 @@ lapackpp_src = ${wildcard lapackpp/include/lapack/*.h \
                           lapackpp/include/lapack/*.hh \
                           lapackpp/src/*.cc}
 
-lapackpp = lapackpp/lib/lapackpp.${lib_ext}
+lapackpp = lapackpp/lib/liblapackpp.${lib_ext}
 
 # dependency on testsweeper, BLAS++ serializes compiles
 ${lapackpp}: ${lapackpp_src} | ${testsweeper} ${blaspp}
@@ -1363,7 +1366,7 @@ ${pkg}:
 
 lib: ${slate} ${matgen}
 
-clean: test/clean unit_test/clean scalapack_api/clean lapack_api/clean include/clean
+clean: src/clean test/clean unit_test/clean scalapack_api/clean lapack_api/clean include/clean
 	rm -f lib/lib* ${dep}
 	rm -f trace_*.svg
 
