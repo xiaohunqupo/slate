@@ -20,7 +20,42 @@ if (NOT DEFINED SCALAPACK_LIBRARIES)
             set( SCALAPACK_LIBRARIES "mkl_scalapack_${int_};mkl_blacs_openmpi_${int_}" )
         endif()
     else()
-        set( SCALAPACK_LIBRARIES "scalapack" )
+        # Try to find ScaLAPACK on the local machine.
+        # First try find_package (some distributions provide a
+        # FindScaLAPACK.cmake or ScaLAPACKConfig.cmake).
+        find_package( ScaLAPACK QUIET )
+        if (ScaLAPACK_FOUND)
+            if (TARGET ScaLAPACK::ScaLAPACK)
+                set( SCALAPACK_LIBRARIES ScaLAPACK::ScaLAPACK )
+            elseif (DEFINED ScaLAPACK_LIBRARIES)
+                set( SCALAPACK_LIBRARIES "${ScaLAPACK_LIBRARIES}" )
+            endif()
+        endif()
+        if (NOT SCALAPACK_LIBRARIES)
+            # Fall back to find_library for scalapack.
+            find_library( SCALAPACK_LIBRARIES
+                NAMES scalapack scalapack-openmpi scalapack-mpich
+                HINTS ${SCALAPACK_ROOT} $ENV{SCALAPACK_ROOT}
+                PATH_SUFFIXES lib lib64
+            )
+            if (SCALAPACK_LIBRARIES)
+                # Also look for BLACS library, which may be separate on
+                # some systems (e.g., older ScaLAPACK or custom builds).
+                get_filename_component( scalapack_dir_ ${SCALAPACK_LIBRARIES} DIRECTORY )
+                find_library( BLACS_LIBRARY
+                    NAMES blacs blacs-openmpi blacs-mpich blacsCinit
+                    HINTS ${scalapack_dir_}
+                    NO_DEFAULT_PATH
+                )
+                if (BLACS_LIBRARY)
+                    list( APPEND SCALAPACK_LIBRARIES ${BLACS_LIBRARY} )
+                endif()
+                unset( scalapack_dir_ )
+                unset( BLACS_LIBRARY )
+            else()
+                set( SCALAPACK_LIBRARIES "none" )
+            endif()
+        endif()
     endif()
 endif()
 if (SCALAPACK_LIBRARIES STREQUAL "none")

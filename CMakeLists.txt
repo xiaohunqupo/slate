@@ -20,6 +20,7 @@ project(
     LANGUAGES CXX Fortran
 )
 
+
 # See notes in GNUmakefile about using abi-compliance-checker.
 # soversion is major ABI version.
 set( abi_version 2.0.0 )
